@@ -1,0 +1,10 @@
+# Forca fim de linha LF nos scripts/units que rodam dentro do Linux/WSL2.
+# Evita a classe inteira de bugs "bad interpreter: /bin/bash^M" por CRLF.
+*.sh      text eol=lf
+*.service text eol=lf
+*.timer   text eol=lf
+*.conf    text eol=lf
+
+# Scripts Windows mantem CRLF.
+*.ps1     text eol=crlf
+*.bat     text eol=crlf

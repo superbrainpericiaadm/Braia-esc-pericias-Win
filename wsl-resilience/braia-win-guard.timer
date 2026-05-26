@@ -1,0 +1,11 @@
+[Unit]
+Description=Braia Win - timer do reforco de resiliencia
+
+[Timer]
+# 30s apos o boot e, depois, a cada 2 minutos (idempotente).
+OnBootSec=30s
+OnUnitActiveSec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

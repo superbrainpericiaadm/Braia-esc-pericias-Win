@@ -1,0 +1,17 @@
+# Segredos e ambiente — NUNCA commitar
+.env
+*.env
+!.env.example
+
+# Estado local do instalador
+BraiaWin/
+install-state.txt
+
+# Logs
+*.log
+logs/
+
+# Sistema
+Thumbs.db
+desktop.ini
+.DS_Store

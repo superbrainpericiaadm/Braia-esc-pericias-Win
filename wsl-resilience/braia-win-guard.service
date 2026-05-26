@@ -1,0 +1,7 @@
+[Unit]
+Description=Braia Win - reforco de resiliencia (habilita services no boot)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/braia-win-guard.sh
