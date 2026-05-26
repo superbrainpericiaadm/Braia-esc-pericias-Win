@@ -7,7 +7,22 @@
 
 ---
 
-## ⚡ Instalação no Windows (comece por aqui)
+## 🤖 Instalação assistida pelo Claude Code (mais fácil)
+
+Deixe o **Claude Code instalar tudo para você** — você só digita **2 tokens**
+(o do **bot do Telegram** e o do **Claude**). Abra o Claude Code na pasta do repo
+(como Administrador) e use:
+
+```
+/instalar-braia
+```
+
+Passo a passo completo e o comando pronto para colar:
+**[`INSTALAR-VIA-CLAUDE-CODE.md`](./INSTALAR-VIA-CLAUDE-CODE.md)**.
+
+---
+
+## ⚡ Instalação manual no Windows
 
 **Pré-requisitos:** Windows 10 (build 19041 / versão 2004) ou Windows 11, com
 virtualização habilitada no BIOS (Intel VT-x / AMD-V) e privilégios de
