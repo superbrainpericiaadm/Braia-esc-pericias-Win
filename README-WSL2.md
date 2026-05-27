@@ -39,6 +39,9 @@ powershell -ExecutionPolicy Bypass -File .\INSTALL-WINDOWS.ps1
 # Não alterar as configurações de energia do Windows:
 .\INSTALL-WSL2.ps1 -SemAjusteEnergia
 
+# Não testar/corrigir o DNS de saída da WSL (etapa 5.5):
+.\INSTALL-WSL2.ps1 -SemAjusteDNS
+
 # Só preparar o WSL2 sem rodar o bootstrap/clone ainda:
 .\INSTALL-WSL2.ps1 -PularBootstrap
 
@@ -56,7 +59,10 @@ powershell -ExecutionPolicy Bypass -File .\INSTALL-WINDOWS.ps1
 4. `wsl --update` + `wsl --set-default-version 2`.
 5. Instala **Ubuntu 22.04 LTS** com `--no-launch` (sem assistente interativo).
 6. Habilita **systemd** dentro do WSL (`/etc/wsl.conf`) — necessário para os
-   `systemctl enable --now` do SETUP original.
+   `systemctl enable --now` do SETUP original — e **checa o DNS de saída** (etapa
+   5.5): o login do Claude e o bot do Telegram dependem de HTTPS de saída; se o
+   `resolv.conf` da WSL subir quebrado, o instalador aplica um resolvedor público
+   (`1.1.1.1`/`8.8.8.8`) — **só** quando o teste realmente falha.
 7. **Copia este repositório (local) para `/root/projeto`** dentro do WSL — não
    clona do GitHub (repo privado e autocontido).
 8. Roda o **`bootstrap.sh` próprio** (Node 22 via nvm, Python3, ffmpeg,
@@ -65,8 +71,11 @@ powershell -ExecutionPolicy Bypass -File .\INSTALL-WINDOWS.ps1
 9. **Resiliência (Linux):** instala o guard `systemd` (`braia-win-guard.timer`),
    que a cada 2 min habilita `cron`, `postgresql`, `caddy` e os serviços do agente.
 10. **Energia (Windows):** desativa suspensão/hibernação na tomada (`powercfg`).
-11. **Autostart (Windows):** cria a tarefa `BraiaWin-Autostart` (boot + logon) e
-    copia `start-braia.ps1` para `%ProgramData%\BraiaWin\`.
+11. **Resiliência (Windows):** roda `wsl-resilience/windows/install-win-resilience.ps1`,
+    que grava `vmIdleTimeout=-1` no `.wslconfig` e registra **três tarefas OCULTAS**
+    (via `wscript.exe` + `.vbs`, sem janela na tela): `BraiaWin-Anchor` (âncora que
+    segura a VM 24/7), `BraiaWin-Autostart` (boot/logon) e `BraiaWin-Keepalive`
+    (a cada 3 min). Copia `start-braia.ps1` e os launchers para `%ProgramData%\BraiaWin\`.
 12. Imprime os 2 passos interativos finais (login do Claude + SETUP).
 
 ---
@@ -127,11 +136,14 @@ Me faca perguntas quando precisar de informacao minha.
 
 | Camada | Mecanismo | Garante |
 |---|---|---|
-| Windows liga | Tarefa `BraiaWin-Autostart` (boot + logon) | A distro WSL2 inicia sozinha |
+| Windows liga | Tarefa `BraiaWin-Autostart` (boot + logon, **oculta**) | A distro WSL2 inicia sozinha |
+| **VM não cai por ociosidade** | **`BraiaWin-Anchor`** (sessão `wsl.exe` bloqueante 24/7) + `vmIdleTimeout=-1` no `.wslconfig` | A VM da WSL2 **nunca** desliga sozinha — sem isso ela cai a cada ~60s e derruba postgres/bot/agente juntos |
 | Distro sobe | `systemd` habilitado (`/etc/wsl.conf`) | `postgresql`, `caddy`, `bot.py` e o serviço do agente sobem |
 | Serviço do agente | (criado pelo SETUP original) | Recria a sessão `tmux` + `claude --continue` |
-| Reforço | `braia-win-guard.timer` (a cada 2 min) | Mantém tudo `enabled` + `cron` ativo |
+| Reforço (Linux) | `braia-win-guard.timer` (a cada 2 min) | Mantém tudo `enabled` + `cron` ativo |
+| Reforço (Windows) | **`BraiaWin-Keepalive`** (a cada 3 min, **oculta**) | Garante VM viva + âncora viva |
 | `tmux` cai | `healthcheck.sh` original (cron 2 min) | Recria a sessão `tmux` + `claude` |
+| **Sem janela na tela** | tarefas chamam `wscript.exe` + `.vbs` (`SW_HIDE`), nunca `wsl.exe`/`powershell` direto | **Nenhuma "janelinha preta"** aparece para o usuário |
 | Energia | `powercfg` (sem standby/hibernate na tomada) | A máquina não dorme |
 
 > 🔁 **Desligou e ligou de volta → tudo volta sozinho.** Após o **primeiro** login
@@ -141,8 +153,14 @@ Me faca perguntas quando precisar de informacao minha.
 ### Conferir / operar manualmente (opcional)
 
 ```powershell
-# Estado da tarefa de autostart
-Get-ScheduledTask -TaskName "BraiaWin-Autostart" | Select-Object State
+# Estado das 3 tarefas de resiliência Windows
+Get-ScheduledTask -TaskName "BraiaWin-*" | Select-Object TaskName, State
+
+# A âncora está segurando a VM? (pidfile dentro da WSL)
+wsl -d Ubuntu-22.04 -u root -- bash -c '[ -f /run/braia-anchor.pid ] && kill -0 $(cat /run/braia-anchor.pid) 2>/dev/null && echo VIVA || echo MORTA'
+
+# Re-aplicar a resiliência Windows sem reinstalar (re-blindar uma máquina):
+powershell -ExecutionPolicy Bypass -File .\wsl-resilience\windows\install-win-resilience.ps1 -Distro Ubuntu-22.04
 
 # Estado do guard de resiliência dentro do WSL
 wsl -d Ubuntu-22.04 -u root -- systemctl status braia-win-guard.timer --no-pager
@@ -176,6 +194,9 @@ Windows** (`netplwiz` → desmarcar "Os usuários devem digitar...") para que o 
 | **`.ps1` bloqueado / SmartScreen** | Mark of the Web nos arquivos baixados | O instalador já roda `Unblock-File`; manualmente: `Get-ChildItem -Recurse | Unblock-File` |
 | **Sem espaço / VHDX não cresce** | disco C: cheio | Libere ≥ 15 GB; o VHDX do WSL2 + Postgres + Node ocupam vários GB |
 | `npm ERR! 404 claude-code@<versão>` | versão pinada/indicada inexistente no npm | O instalador usa `@latest` por padrão; se fixou uma versão via `-ClaudeVersion`, use uma válida |
+| **"Janelinha preta" (console do WSL) aparece na tela** | tarefa chamando `wsl.exe`/`powershell` direto (instalação antiga) | Re-rode `wsl-resilience\windows\install-win-resilience.ps1` — ele registra tudo via `wscript`+`.vbs` (`SW_HIDE`, oculto) |
+| **Agente "morre" sozinho após ~1 min ocioso** | WSL2 desligou a VM por ociosidade | Confirme `BraiaWin-Anchor` em `Running` e `vmIdleTimeout=-1` em `%USERPROFILE%\.wslconfig`; re-rode a resiliência Windows |
+| **Login do Claude / bot do Telegram falham (timeout)** | DNS de saída da WSL quebrado | `wsl -d Ubuntu-22.04 -- curl -sI https://api.anthropic.com`; se falhar, rode o instalador (etapa 5.5) ou ajuste `/etc/resolv.conf` |
 
 Logs de diagnóstico:
 
