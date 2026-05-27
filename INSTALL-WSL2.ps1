@@ -27,13 +27,13 @@
         - se a CPU nao suportar: aborta com diagnostico.
    3. Kernel WSL (`wsl --update`) + WSL2 como padrao.
    4. Instala Ubuntu 22.04 LTS (sem OOBE interativo).
-   5. Habilita systemd dentro do WSL.
+   5. Habilita systemd dentro do WSL + checa o DNS de saida (login/Telegram).
    6. Copia ESTE repositorio (LOCAL, self-contained) para /root/projeto no WSL.
    7. Roda o bootstrap.sh proprio (Node 22, Python, ffmpeg, PostgreSQL 16 +
       pgvector, Caddy, pm2, Claude Code @latest; ver -ClaudeVersion).
    8. RESILIENCIA (Linux): instala o guard systemd (enable de tudo + cron).
    9. ENERGIA (Windows): impede sleep/hibernate na tomada.
-  10. AUTOSTART (Windows): tarefa que sobe o WSL no boot/logon.
+  10. RESILIENCIA (Windows): vmIdleTimeout + ANCORA + tarefas OCULTAS (boot/keepalive).
   11. Imprime os 2 passos interativos finais (login + SETUP).
 
  NAO converte .sh para .ps1. NAO altera a logica de negocio do projeto.
@@ -48,7 +48,8 @@ param(
     [switch] $PularBootstrap,    # pula etapas 6/7 (so prepara o WSL2)
     [switch] $SemResiliencia,    # opt-out: nao instala o guard systemd (etapa 8)
     [switch] $SemAjusteEnergia,  # opt-out: nao mexe na energia do Windows (etapa 9)
-    [switch] $SemAutostart       # opt-out: nao cria a tarefa de boot (etapa 10)
+    [switch] $SemAjusteDNS,      # opt-out: nao testa/corrige o DNS de saida da WSL (etapa 5.5)
+    [switch] $SemAutostart       # opt-out: nao cria as tarefas de resiliencia Windows (etapa 10)
 )
 
 $ErrorActionPreference = "Stop"
@@ -333,6 +334,38 @@ Write-Step "Habilitando systemd dentro do $Distro"
 Write-Ok "systemd habilitado (/etc/wsl.conf)."
 
 # --------------------------------------------------------------------------
+# 5.5) Sanidade de DNS / saida na WSL
+#      O login do Claude e o bot do Telegram dependem de HTTPS de SAIDA. Em
+#      algumas maquinas o resolv.conf da WSL sobe quebrado e AMBOS falham (foi
+#      o "IP do WSL" que travou o deploy de referencia). Testa e SO corrige se
+#      realmente falhar (em rede corporativa com proxy, pode ser firewall).
+# --------------------------------------------------------------------------
+if ($SemAjusteDNS) {
+    Write-Warn2 "Checagem de DNS da WSL pulada (-SemAjusteDNS)."
+} else {
+    Write-Step "Checando a saida HTTPS de dentro do WSL (DNS)"
+    function Test-WslHttps {
+        $code = (& wsl.exe -d $Distro -u root -- bash -lc "curl -s -o /dev/null -w '%{http_code}' --max-time 8 https://api.anthropic.com 2>/dev/null") 2>$null
+        return (("$code".Trim()) -match '^\d{3}$' -and ("$code".Trim()) -ne '000')
+    }
+    if (Test-WslHttps) {
+        Write-Ok "Saida HTTPS da WSL OK (DNS resolvendo)."
+    } else {
+        Write-Warn2 "WSL sem saida HTTPS (DNS provavelmente quebrado). Aplicando resolvedor publico..."
+        $dnsFix = @'
+printf '[boot]\nsystemd=true\n\n[network]\ngenerateResolvConf=false\n' > /etc/wsl.conf
+rm -f /etc/resolv.conf
+printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
+'@
+        & wsl.exe -d $Distro -u root -- bash -lc $dnsFix | Out-Null
+        & wsl.exe --terminate $Distro 2>$null
+        Start-Sleep -Seconds 3
+        if (Test-WslHttps) { Write-Ok "DNS corrigido (1.1.1.1/8.8.8.8); saida HTTPS OK." }
+        else { Write-Warn2 "Ainda sem saida HTTPS - provavel proxy/firewall corporativo. Resolva a rede ANTES do login do Claude." }
+    }
+}
+
+# --------------------------------------------------------------------------
 # 6) Copia o repo (LOCAL, self-contained) para o WSL + 7) roda o bootstrap
 # --------------------------------------------------------------------------
 # Este repositorio e AUTOCONTIDO: o instalador NAO clona do GitHub (o repo e
@@ -393,33 +426,25 @@ if ($SemAjusteEnergia) {
 }
 
 # --------------------------------------------------------------------------
-# 10) AUTOSTART (Windows): tarefa que sobe o WSL no boot/logon
+# 10) RESILIENCIA (Windows): vmIdleTimeout + ANCORA + tarefas OCULTAS
+#     Fecha as lacunas que o guard Linux (etapa 8) NAO cobre: a WSL2 desliga a
+#     VM por ociosidade (~60s) derrubando tudo, e a tarefa antiga deixava uma
+#     "janelinha preta" na tela do cliente. Detalhes em wsl-resilience/windows/.
 # --------------------------------------------------------------------------
 if ($SemAutostart) {
-    Write-Warn2 "Tarefa de autostart pulada (-SemAutostart)."
+    Write-Warn2 "Resiliencia Windows pulada (-SemAutostart)."
 } else {
-    Write-Step "Criando autostart (sobe o WSL no boot/logon -> systemd sobe o agente)"
-    # Copia o start-braia.ps1 para um local estavel (independe da pasta do repo).
-    $startSrc = Join-Path $PSScriptRoot "start-braia.ps1"
-    $startDst = Join-Path $StateDir "start-braia.ps1"
-    if (Test-Path $startSrc) { Copy-Item $startSrc $startDst -Force }
-    else { Write-Warn2 "start-braia.ps1 nao encontrado ao lado do instalador." }
-
-    $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $arg  = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$startDst`" -Distro `"$Distro`""
-    try {
-        $action    = New-ScheduledTaskAction  -Execute "powershell.exe" -Argument $arg
-        $trigLogon = New-ScheduledTaskTrigger  -AtLogOn -User $user
-        $trigBoot  = New-ScheduledTaskTrigger  -AtStartup
-        $principal = New-ScheduledTaskPrincipal -UserId $user -RunLevel Highest -LogonType Interactive
-        $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-                        -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-        $settings.ExecutionTimeLimit = "PT0S"   # sem limite de tempo
-        Register-ScheduledTask -TaskName "BraiaWin-Autostart" -Action $action `
-            -Trigger @($trigLogon,$trigBoot) -Principal $principal -Settings $settings -Force | Out-Null
-        Write-Ok "Tarefa 'BraiaWin-Autostart' criada (boot + logon)."
-    } catch {
-        Write-Warn2 "Falha ao registrar a tarefa: $($_.Exception.Message)"
+    Write-Step "Configurando resiliencia Windows (vmIdleTimeout + ancora + tarefas ocultas)"
+    $winRes = Join-Path $PSScriptRoot "wsl-resilience\windows\install-win-resilience.ps1"
+    if (Test-Path $winRes) {
+        try {
+            & $winRes -Distro $Distro -StateDir $StateDir -RepoRoot $PSScriptRoot
+            Write-Ok "Resiliencia Windows ativa (BraiaWin-Anchor + Autostart + Keepalive, ocultas)."
+        } catch {
+            Write-Warn2 "Falha ao configurar a resiliencia Windows: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Warn2 "install-win-resilience.ps1 nao encontrado em wsl-resilience\windows\."
     }
 }
 
@@ -433,11 +458,14 @@ Write-Host "============================================================" -Foreg
 Write-Host @"
 
 A resiliencia ja esta configurada:
-  - Tarefa 'BraiaWin-Autostart' sobe o WSL2 no boot/logon.
+  - Tarefas OCULTAS (sem janela): BraiaWin-Anchor (segura a VM 24/7),
+    BraiaWin-Autostart (boot/logon) e BraiaWin-Keepalive (a cada 3 min).
+  - .wslconfig com vmIdleTimeout=-1: a VM nao desliga mais por ociosidade.
   - systemd habilitado -> sobe postgresql, caddy, bot.py e o service do agente.
-  - Guard systemd (a cada 2 min) mantem tudo 'enabled' + cron ativo.
+  - Guard systemd + healthcheck (cron) mantem tudo 'enabled' e reinicia o que cair.
   - Energia: a maquina nao dorme na tomada.
-  => Se desligar e ligar de novo, WSL2 + systemd + tmux + claude voltam sozinhos.
+  => Se desligar e ligar de novo, WSL2 + systemd + tmux + claude voltam sozinhos,
+     SEM nenhuma janelinha preta aparecendo para o usuario.
 
 Agora abra o Ubuntu como root:
     wsl -d $Distro -u root
