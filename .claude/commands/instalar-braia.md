@@ -10,13 +10,15 @@ um agente que combina o **Claude Code** com um **bot do Telegram**, rodando 24/7
 **Repositório:** https://github.com/superbrainpericiaadm/Braia-esc-pericias-Win
 
 ## Regra de ouro (inserção mínima)
-Peça ao usuário **APENAS DUAS COISAS**, e nada além:
+Peça ao usuário **APENAS TRÊS COISAS**, e nada além:
 1. O **token do bot do Telegram** (o código que o `@BotFather` entrega).
 2. O **token/login do Claude** (API key `sk-ant-...` **ou** login da conta Pro/Max).
+3. A **chave da OpenAI** (`sk-...`) — **destrava a memória semântica (embeddings `text-embedding-3-small`) E o áudio (Whisper)**. É **opcional**: sem ela a memória funciona em modo **full-text** (busca por palavras + raciocínio do Claude, sem custo/sem RAM extra) e o áudio fica desligado. **Recomende fortemente** preencher — é a chave que liga a busca por significado.
 
 **Todo o resto você resolve sozinho** — gera senhas, define nomes, detecta o
-ID do Telegram automaticamente. Nunca pergunte algo que dê para assumir um padrão
-ou descobrir sozinho. Nunca imprima segredos por extenso.
+ID do Telegram automaticamente, constrói a memória (pgvector + full-text). Nunca
+pergunte algo que dê para assumir um padrão ou descobrir sozinho. Nunca imprima
+segredos por extenso.
 
 ## Passo a passo que você deve executar
 
@@ -69,20 +71,40 @@ Pergunte: **"Cole seu token do Claude (API key `sk-ant-...`) ou digite `login` p
   `result[].message.from.id`. Use esse número como `ALLOWED_USERS`. Confirme o ID
   com o usuário em uma linha.
 
+### 6.5. Chave da OpenAI (pergunte UMA vez, opcional)
+- Pergunte: **"Cole sua chave da OpenAI (`sk-...`) para ligar a memória semântica e o áudio. Se não tiver agora, pode pular e preencher depois."**
+- Guarde para gravar nos `.env` no passo de memória (7.5). Se o usuário pular, a
+  memória funciona em **full-text** e o áudio fica desligado — sem erro.
+
 ### 7. Rodar o SETUP você mesmo (NÃO peça para o usuário fazer)
-Leia `/root/projeto/SETUP-AGENTE.md` e execute **todos** os passos dentro do WSL,
+Execute os passos dentro do WSL deployando os **arquivos do repo** (não os genéricos),
 aplicando estes padrões automaticamente (sem perguntar):
 - `AGENTE_NAME=braia`, `OWNER_NAME=Braia`, `TMUX_SESSION=braia`.
 - Gere uma **senha forte aleatória** para o PostgreSQL.
 - Preencha os `.env` (`/opt/braia/.env` e `/opt/braia-bot/.env`) com:
   `TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` (o ID detectado), `DATABASE_URL` e a
-  credencial do Claude (API key ou login já feito).
+  credencial do Claude.
 - Crie usuário/banco no PostgreSQL + extensão `vector` + índices HNSW a partir de
-  `database/schema.sql`.
-- Crie e habilite os serviços `systemd` (`braia-bot`, etc.) e a sessão `tmux`
-  rodando `claude --continue`.
+  `database/schema.sql` (aplique via **stdin**: `psql < schema.sql`, pois o user
+  `postgres` não lê `/root`). Use o role **`n8n`** e o banco **`braia_memory`**.
 - Use os 3 agentes em `.claude/agents/` (`isaura`, `angelica`, `paulo-dev`) e o
   `CLAUDE.md` como a persona da **Braia**.
+
+> **Gotchas obrigatórios (senão quebra):**
+> - O agente roda como usuário **não-root** `braia` (o `claude` recusa `--dangerously-skip-permissions` como root). Mas o `node`/`claude` ficam em `/root/.nvm` (700) → **copie para `/opt/node22` e crie symlinks em `/usr/local/bin`** (node, npm, npx, claude, pm2).
+> - **Pré-complete o onboarding do `claude` para o `braia`:** `~/.claude.json` → `{"hasCompletedOnboarding":true,"theme":"dark"}`; aceite o trust de `/opt/braia` 1x; `~/.claude/settings.json` → `{"skipDangerousModePermissionPrompt":true}`. Autentique via `CLAUDE_CODE_OAUTH_TOKEN` no `.env`.
+> - **`bot.py`**: troque o `BOT_DIR` mac por `/opt/braia-bot` e substitua `{{TELEGRAM_USER_ID_DONO}}` pelo chat_id (aparece como código Python cru). `py_compile` para validar.
+> - **Serviços** (nomes que o `healthcheck.sh` exige): `braia-telegram-bot` (bot) e `braia-agent` (tmux+claude). Launcher: loop com `claude --continue --dangerously-skip-permissions || claude --dangerously-skip-permissions` (o `--continue` sai na 1ª vez).
+
+### 7.5. Memória (pgvector + full-text) — construa na hora
+Rode o configurador de memória (constrói o consolidador, a busca e os índices):
+```bash
+bash /root/projeto/memory-service/setup-memory.sh "<CHAVE_OPENAI_OU_VAZIO>"
+```
+Isso: aplica os índices full-text, instala `consolidate.py` (cron 2 min, grava as
+conversas no `conversation_history`) e `search.py` (busca que o `CLAUDE.md` chama no
+boot). **Com** a chave OpenAI → busca **vetorial** por significado (+ áudio Whisper
+ligado); **sem** chave → **full-text**. Não instala modelo local (zero RAM extra).
 
 ### 8. Validar de ponta a ponta
 - Peça ao usuário para mandar uma mensagem ao bot no Telegram e confirme que a
@@ -95,6 +117,7 @@ Resuma: o que foi instalado, que a **resiliência está ativa** (volta sozinho a
 reiniciar) e que as **únicas** inserções manuais foram os 2 tokens.
 
 ## Lembretes
-- Pergunte SÓ os 2 tokens. Defaulte/auto-detecte tudo o mais.
+- Pergunte SÓ os 3 itens (Telegram, Claude, OpenAI). A chave OpenAI é opcional mas recomendada (memória vetorial + áudio). Defaulte/auto-detecte todo o resto.
 - Seja explícito sobre o comportamento de reboot.
 - Nunca exponha segredos por extenso nas mensagens.
+- Ao final, confirme: Braia responde no Telegram **e** a memória está gravando (`conversation_history` crescendo) — com chave, em modo vetorial; sem chave, full-text.
