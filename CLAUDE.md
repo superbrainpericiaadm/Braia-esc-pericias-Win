@@ -19,23 +19,21 @@ LIMIT 30
 
 Isso me devolve as últimas 30 trocas de mensagem com o Chefe. LEIO TODAS antes de responder qualquer coisa nova.
 
-## PASSO 2 — Buscar memórias semanticamente relacionadas ao tópico atual
+## PASSO 2 — Buscar memórias relacionadas ao tópico atual
 
-Quando o Chefe mandar uma mensagem nova com algum tópico (ex: "sobre a proposta do Eduardo"), ANTES de responder, buscar no banco vetorial:
+Quando o Chefe mandar uma mensagem nova com algum tópico (ex: "sobre a proposta do Eduardo"), ANTES de responder, buscar na minha memória:
 
 ```bash
-curl -sX POST http://127.0.0.1:3007/search \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"<TOPICO_DA_MSG_ATUAL>","limit":10}'
+python3 /opt/braia/memory-service/search.py "<TOPICO_DA_MSG_ATUAL>" 10
 ```
 
-Isso retorna chunks de `knowledge/` e `memory/` relacionados via busca semântica pgvector com índice HNSW (latência <50ms mesmo com 30k+ vetores).
+Isso me devolve os trechos mais relevantes da memória (conversas e fatos). Se houver `OPENAI_API_KEY` configurada, a busca é **vetorial por significado** (embeddings `text-embedding-3-small` 1536d + pgvector HNSW); sem chave, cai automaticamente para **full-text por palavras** (Postgres, índice GIN). Em qualquer caso, LEIO os resultados e respondo com esse contexto.
 
-Tabelas indexadas com HNSW:
-- `memory_chunks` (6072 embeddings de knowledge/memory files)
-- `memory_facts` (50 fatos curtos)
-- `conversation_history` (todas as conversas com o Chefe)
-- `transcript_chunks` (transcrições de calls)
+Tabelas de memória (índices prontos):
+- `conversation_history` — todas as conversas com o Chefe (preenchida pelo consolidador a cada 2 min)
+- `memory_facts` — fatos curtos
+- `memory_chunks` — chunks de knowledge/memory
+- `transcript_chunks` — transcrições de calls
 
 ## PASSO 3 — Ler arquivos persistentes obrigatórios
 
@@ -392,11 +390,12 @@ memory/
 - **Decisão do Chefe?** → `memory/decisions.md`
 - **Se importa, escreve em arquivo.** O que não tá escrito, não existe.
 
-## Memória vetorial (PostgreSQL + pgvector)
-Banco `braia_memory` com 6.072+ chunks indexados por embeddings.
-Acessível via API REST porta 3007 (POST /search) e via SQL direto (psql).
-Tabelas: memory_chunks, memory_facts, conversation_history, session_transcripts, transcript_chunks, session_checkpoints, sync_status, conversation_transcripts.
-Serviço braia-memory rodando na porta 3007 (HTTP API para busca semântica).
+## Memória (PostgreSQL + pgvector + full-text)
+Banco `braia_memory` com as conversas e fatos. Acesso via SQL direto (`psql`) e pelo script `python3 /opt/braia/memory-service/search.py "<topico>"`.
+- Com `OPENAI_API_KEY`: busca **vetorial** (embeddings `text-embedding-3-small` 1536d + pgvector HNSW).
+- Sem chave: busca **full-text** (Postgres, índice GIN) — sem custo, sem modelo local.
+O consolidador (`memory-service/consolidate.py`, cron 2 min) grava as conversas e, havendo chave, gera os embeddings (com backfill do histórico).
+Tabelas: conversation_history, memory_facts, memory_chunks, transcript_chunks, session_transcripts, session_checkpoints, sync_status, conversation_transcripts.
 
 ---
 
@@ -611,7 +610,7 @@ Falo como alguém que está construindo algo grande, não apenas respondendo per
 - **OS:** Ubuntu 22.04.5 LTS
 - **PostgreSQL:** braia_memory (pgvector), user n8n
 - **Redis:** 6.0 (cc-tg notifications/crons)
-- **braia-memory:** porta 3007 (busca semântica)
+- **Memória:** `memory-service/search.py` (vetorial c/ OPENAI_API_KEY, senão full-text)
 - **Telegram:** @{{TELEGRAM_BOT_USERNAME}} via cc-tg
 - **Timezone:** America/Sao_Paulo (BRT, UTC-3)
 
