@@ -87,7 +87,7 @@ aplicando estes padrões automaticamente (sem perguntar):
 - Crie usuário/banco no PostgreSQL + extensão `vector` + índices HNSW a partir de
   `database/schema.sql` (aplique via **stdin**: `psql < schema.sql`, pois o user
   `postgres` não lê `/root`). Use o role **`n8n`** e o banco **`braia_memory`**.
-- Use os 3 agentes em `.claude/agents/` (`isaura`, `angelica`, `paulo-dev`) e o
+- Use os 5 agentes em `.claude/agents/` (`isaura`, `angelica`, `paulo-dev`, `juliana-ops`, `rebeca-pericia`) e o
   `CLAUDE.md` como a persona da **Braia**.
 
 > **Gotchas obrigatórios (senão quebra):**
