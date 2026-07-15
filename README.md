@@ -110,7 +110,7 @@ Este repositório é **privado e autocontido**. O fluxo é:
 ## O que este repositório contém
 
 É **autocontido**: traz tanto a camada de orquestração Windows quanto a carga da
-Braia (app + persona + 3 agentes). Os `.sh` permanecem nativos (sem conversão).
+Braia (app + persona + 5 agentes). Os `.sh` permanecem nativos (sem conversão).
 
 **Camada Windows (instalação):**
 
@@ -130,7 +130,7 @@ Braia (app + persona + 3 agentes). Os `.sh` permanecem nativos (sem conversão).
 |---|---|
 | `bootstrap.sh` | Instalador Linux **self-contained** (patcheado: cópia local + Claude `@latest`) |
 | `CLAUDE.md` | Persona/configuração da **Braia** (agente principal) |
-| `.claude/agents/` | **3 agentes**: `isaura`, `angelica`, `paulo-dev` |
+| `.claude/agents/` | **5 agentes**: `isaura`, `angelica`, `paulo-dev`, `juliana-ops`, `rebeca-pericia` |
 | `SETUP-AGENTE.md` | Roteiro que o Claude executa para montar o agente |
 | `.env.example` | Modelo de variáveis (token Telegram, DB, áudio…) |
 | `braia-bot/` | `bot.py` (daemon Telegram) + `healthcheck.sh` |

@@ -56,7 +56,7 @@ token/login do Claude. Defaulte e auto-detecte todo o resto. Faça assim:
 7. Leia /root/projeto/SETUP-AGENTE.md e execute TODOS os passos no WSL, com padrões
    automáticos (AGENTE_NAME=braia, OWNER_NAME=Braia, senha do Postgres aleatória),
    preenchendo os .env, criando banco+pgvector+índices, serviços systemd e a sessão
-   tmux com claude --continue, usando os 3 agentes (.claude/agents) e o CLAUDE.md.
+   tmux com claude --continue, usando os 5 agentes (.claude/agents) e o CLAUDE.md.
 8. Valide: peça-me para mandar mensagem ao bot e confirme que a Braia responde
    (systemctl is-active braia-bot, curl http://localhost:3600/health).
 9. Me dê um relatório final. Nunca exponha segredos por extenso.
