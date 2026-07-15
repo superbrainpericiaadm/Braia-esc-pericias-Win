@@ -115,7 +115,7 @@ Apos systemd subir e bot estar online, peca pro aluno mandar um `/start` no bot 
 A v2 ja tinha bot Python externo + Whisper + ElevenLabs. A v3 adiciona:
 
 1. **agent-manager.py** (Python via PM2): gerencia jobs longos sem travar a Braia. Roda na porta 3600 com proxy reverso via Caddy. Acessivel em `https://AGENTE.dominio.com`.
-2. **Suite de subagentes especializados**: paulo-dev, juliana-ops, jonathan-copy, rafael-projetos, davi-sdr.
+2. **Suite de subagentes especializados**: paulo-dev, juliana-ops, angelica, isaura, rebeca-pericia.
 3. **Memoria vetorial PostgreSQL + pgvector**: HNSW index pra busca semantica em milhares de mensagens.
 4. **Bot externo robusto**: Restart=always via systemd, polling continuo independente do Claude.
 5. **Audio bidirecional**: Whisper PT-BR (entrada) e ElevenLabs TTS (saida).
@@ -400,9 +400,9 @@ Cria `/opt/AGENTE/CLAUDE.md` com:
 Cria os 5 subagentes em `/opt/AGENTE/.claude/agents/`:
 - `paulo-dev.md` (dev full-stack)
 - `juliana-ops.md` (sub-gerente, design, processos)
-- `jonathan-copy.md` (copywriter, roteiros)
-- `rafael-projetos.md` (gestao de projetos)
-- `davi-sdr.md` (SDR vendas SPIN)
+- `angelica.md` (RH e contratação de novos agentes)
+- `isaura.md` (secretaria executiva: e-mail, agenda, propostas, Drive)
+- `rebeca-pericia.md` (assistente de perícia judicial: laudos, quesitos, cálculos, minutas)
 
 Cada um com personalidade dedicada e missao clara.
 
