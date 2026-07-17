@@ -3,6 +3,9 @@
 *.env
 !.env.example
 
+# Backups locais da sanitizacao — contem dados reais, NUNCA commitar
+*.md.bak-*
+
 # Estado local do instalador
 BraiaWin/
 install-state.txt
